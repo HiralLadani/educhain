@@ -1,3 +1,4 @@
+/* Global styles */
 body, html {
   margin: 0;
   padding: 0;
@@ -19,6 +20,7 @@ h1 {
   color: #2c3e50;
 }
 
+/* Role selection buttons */
 .roles {
   display: flex;
   justify-content: center;
@@ -36,10 +38,12 @@ h1 {
   cursor: pointer;
   transition: background 0.3s;
 }
+
 .roles button:hover {
   background: #2980b9;
 }
 
+/* Panel for each role */
 .panel {
   background: white;
   border-radius: 8px;
@@ -48,6 +52,7 @@ h1 {
   margin-bottom: 2rem;
 }
 
+/* Form inputs */
 input {
   width: calc(100% - 1rem);
   margin: 0.4rem 0;
@@ -56,6 +61,7 @@ input {
   border-radius: 4px;
 }
 
+/* Buttons inside panel */
 button {
   margin-top: 0.4rem;
   padding: 0.4rem 0.8rem;
@@ -72,6 +78,7 @@ button:hover {
   background: #1e874b;
 }
 
+/* Lists */
 ul {
   list-style: none;
   padding: 0;
@@ -88,6 +95,7 @@ p {
   margin: 0.5rem 0;
 }
 
+/* Responsive adjustments */
 @media (max-width: 600px) {
   .roles {
     flex-direction: column;
@@ -96,11 +104,21 @@ p {
     width: 100%;
   }
 }
+
+/* Modal styles */
 .modal {
-  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  position: fixed; 
+  top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.4);
-  display: flex; align-items: center; justify-content: center;
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
 }
+
 .modal-content {
-  background: #fff; padding: 2rem; border-radius: 8px; max-width: 400px; width: 90%;
+  background: #fff;
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 400px;
+  width: 90%;
 }
