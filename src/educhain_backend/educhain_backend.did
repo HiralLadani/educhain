@@ -1,3 +1,64 @@
+type StudentProfile = record {
+    name: text;
+    roll_no: text;
+    email: text;
+};
+
+type Course = record {
+    id: nat64;
+    title: text;
+    description: text;
+    instructor: principal;
+};
+
+type CourseRequest = record {
+    id: nat64;
+    title: text;
+    description: text;
+    instructor: principal;
+    instructor_name: text;
+};
+
+type DaoProposal = record {
+    text: text;
+    yes_votes: nat32;
+    no_votes: nat32;
+};
+
+type PlatformStats = record {
+    total_students: nat64;
+    total_courses: nat64;
+    certificates_issued: nat64;
+};
+
 service : {
-    "greet": (text) -> (text) query;
-}
+  // Student
+  update_student_profile: (text, text, text) -> (text);
+  enroll_in_course: (nat64) -> (text);
+  drop_out_of_course: (nat64) -> (text);
+  browse_courses: () -> (vec Course) query;
+
+  // Instructor
+  request_new_course: (text, text, text) -> (CourseRequest);
+  list_my_courses: () -> (vec Course) query;
+  list_enrolled_students: (nat64) -> (vec record { 
+    student: principal;
+    student_name: text;
+    roll_no: text;
+    passed: opt bool 
+  }) query;
+  mark_pass: (nat64, principal) -> (text);
+  mark_fail: (nat64, principal) -> (text);
+
+  // Admin
+  approve_course_request: (nat64) -> (text);
+  list_pending_requests: () -> (vec CourseRequest) query;
+  ban_instructor: (principal) -> (text);
+  remove_student: (principal) -> (text);
+  set_token_reward: (nat64) -> (text);
+  set_cost_to_enroll: (nat64) -> (text);
+  add_dao_proposal: (text) -> (text);
+  vote_on_proposal: (nat64, bool) -> (text);
+  view_dao_proposals: () -> (vec DaoProposal) query;
+  get_platform_stats: () -> (PlatformStats) query;
+};
