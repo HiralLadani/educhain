@@ -1,9 +1,86 @@
+// import React, { useEffect, useState } from 'react';
+// import { AuthClient } from '@dfinity/auth-client';
+// import { HttpAgent, Actor } from '@dfinity/agent';
+// import { idlFactory, canisterId as educhainCanisterId } from '../../declarations/educhain_backend';
+
+// function App() {
+//   const [authClient, setAuthClient] = useState(null);
+//   const [actor, setActor] = useState(null);
+//   const [principal, setPrincipal] = useState(null);
+
+//   const createActor = (identity) => {
+//     const agent = new HttpAgent({ identity });
+//     if (import.meta.env.VITE_DFX_NETWORK === 'local') {
+//       agent.fetchRootKey();
+//     }
+//     return Actor.createActor(idlFactory, {
+//       agent,
+//       canisterId: educhainCanisterId,
+//     });
+//   };
+
+//   useEffect(() => {
+//     AuthClient.create().then(async (client) => {
+//       setAuthClient(client);
+//       if (await client.isAuthenticated()) {
+//         const identity = client.getIdentity();
+//         setPrincipal(identity.getPrincipal().toText());
+//         setActor(createActor(identity));
+//       }
+//     });
+//   }, []);
+
+//   const login = async () => {
+//     await authClient.login({
+//       identityProvider: import.meta.env.VITE_DFX_NETWORK === 'local'
+//         ? `http://${import.meta.env.VITE_INTERNET_IDENTITY_CANISTER_ID}.localhost:4943/#authorize`
+//         : 'https://identity.ic0.app/#authorize',
+//       onSuccess: async () => {
+//         const identity = authClient.getIdentity();
+//         setPrincipal(identity.getPrincipal().toText());
+//         setActor(createActor(identity));
+//       },
+//     });
+//   };
+
+//   const logout = async () => {
+//     await authClient.logout();
+//     setActor(null);
+//     setPrincipal(null);
+//   };
+
+//   return (
+//     <div>
+//       {principal ? (
+//         <>
+//           <p>Logged in as {principal}</p>
+//           <button onClick={logout}>Logout</button>
+//           {/* Add your protected app UI here */}
+//         </>
+//       ) : (
+//         <button onClick={login}>Login with Internet Identity</button>
+//       )}
+//     </div>
+//   );
+// }
+
+// export default App;
+
 import React, { useState, useEffect } from "react";
 import "./index.scss";
 import { Toaster, toast } from "react-hot-toast";
+import { AuthClient } from "@dfinity/auth-client";
+import { HttpAgent, Actor } from "@dfinity/agent";
+import { Principal } from "@dfinity/principal";
+import { idlFactory, canisterId as educhainCanisterId } from "../../declarations/educhain_backend";
 
 export default function App() {
   const [role, setRole] = useState(null);
+  const [principalText, setPrincipalText] = useState("");
+  const [identity, setIdentity] = useState(null);
+  const [actor, setActor] = useState(null);
+  const [authClient, setAuthClient] = useState(null);
+
   const [courses, setCourses] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [myCourses, setMyCourses] = useState([]);
@@ -15,22 +92,102 @@ export default function App() {
   const [voteIndex, setVoteIndex] = useState("");
   const [enrolledPopup, setEnrolledPopup] = useState({ show: false, courseId: null, list: [] });
   const [loading, setLoading] = useState(false);
+const [users, setUsers] = useState([]);
 
-  const loadAll = async () => {
+  const network = import.meta.env.VITE_DFX_NETWORK || "local";
+  const iiCanister = import.meta.env.VITE_INTERNET_IDENTITY_CANISTER_ID;
+
+  const createActor = (identity) => {
+    const agent = new HttpAgent({ identity });
+    if (network === "local") agent.fetchRootKey();
+    return Actor.createActor(idlFactory, { agent, canisterId: educhainCanisterId });
+  };
+
+  const refreshSession = async () => {
+    if (!authClient) return;
+    if (!(await authClient.isAuthenticated())) return;
+
+    const ident = authClient.getIdentity();
+    setIdentity(ident);
+    const principal = ident.getPrincipal();
+    setPrincipalText(principal.toText());
+
+    const act = createActor(ident);
+    setActor(act);
+
     try {
-      const { educhain_backend } = await import("../../declarations/educhain_backend");
-      const [
-        allCourses,
-        pending,
-        mine,
-        proposals,
-        stats
-      ] = await Promise.all([
-        educhain_backend.browse_courses(),
-        educhain_backend.list_pending_requests(),
-        educhain_backend.list_my_courses(),
-        educhain_backend.view_dao_proposals(),
-        educhain_backend.get_platform_stats()
+      await act.register_user(); // New users get Guest role
+    } catch (e) {
+      console.log("Already registered or registration failed:", e.message);
+    }
+
+    try {
+      const res = await act.my_role();
+      const detected = res ? Object.keys(res)[0] : "Guest";
+      setRole(detected);
+      toast.success(`Logged in as ${detected}`);
+      loadAll(act);
+    } catch (e) {
+      console.error("Role fetch failed", e);
+    }
+  };
+
+  const login = async () => {
+    const client = await AuthClient.create();
+    setAuthClient(client);
+    await client.login({
+      identityProvider:
+        network === "ic"
+          ? "https://identity.ic0.app/#authorize"
+          : `http://${iiCanister}.localhost:4943/#authorize`,
+      onSuccess: async () => {
+        await refreshSession();
+      },
+    });
+  };
+const handleLoginAs = async (newRole) => {
+  await login();  // perform Internet Identity login
+  setRole(newRole); // store role locally
+
+  // Optionally, store this in backend
+  try {
+    await actor.assign_role(Principal.fromText(principalText), { [newRole]: null });
+    toast.success(`Assigned role ${newRole} to self`);
+  } catch (e) {
+    console.warn(`Failed to persist role in backend:`, e.message);
+  }
+};
+const updateUsers = async () => {
+  if (!actor) return;
+  try {
+    const arr = await actor.list_users();
+    setUsers(arr.map(([p, r]) => ({
+      principal: p.toText(),
+      role: Object.keys(r)[0],
+    })));
+  } catch {
+    toast.error("Failed to load user list");
+  }
+};
+  const logout = async () => {
+    await authClient.logout();
+    setIdentity(null);
+    setActor(null);
+    setPrincipalText("");
+    setRole(null);
+    toast.success("Logged out!");
+  };
+
+  const loadAll = async (currentActor = actor) => {
+    if (!currentActor) return;
+    try {
+      setLoading(true);
+      const [allCourses, pending, mine, proposals, stats] = await Promise.all([
+        currentActor.browse_courses(),
+        currentActor.list_pending_requests(),
+        currentActor.list_my_courses(),
+        currentActor.view_dao_proposals(),
+        currentActor.get_platform_stats()
       ]);
       setCourses(allCourses);
       setPendingRequests(pending);
@@ -38,32 +195,34 @@ export default function App() {
       setDaoProposals(proposals);
       setStats(stats);
     } catch (e) {
-      console.error(e);
       toast.error("Failed to load data");
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { loadAll(); }, []);
-
   const call = async (method, args = []) => {
+    if (!actor) return toast.error("Login first!");
     try {
       setLoading(true);
-      const { educhain_backend } = await import("../../declarations/educhain_backend");
-      const res = await educhain_backend[method](...args);
+      const res = await actor[method](...args);
       toast.success(typeof res === "string" ? res : "Done");
-      setNewCourse({ title: "", description: "", instructor_name: "" });
-      setNewProposal(""); setVoteIndex("");
+      if (method === "request_new_course") setNewCourse({ title: "", description: "", instructor_name: "" });
+      if (method === "add_dao_proposal") setNewProposal("");
+      if (method === "vote_on_proposal") setVoteIndex("");
       await loadAll();
     } catch (e) {
-      console.error(e);
       toast.error("Operation failed");
-    } finally { setLoading(false); }
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const showEnrolled = async (courseId) => {
     try {
-      const { educhain_backend } = await import("../../declarations/educhain_backend");
-      const list = await educhain_backend.list_enrolled_students(BigInt(courseId));
+      const list = await actor.list_enrolled_students(BigInt(courseId));
       const formatted = list.map(en => ({
         student: en.student.toString(),
         name: en.student_name,
@@ -72,20 +231,37 @@ export default function App() {
       }));
       setEnrolledPopup({ show: true, courseId, list: formatted });
     } catch (e) {
-      console.error(e);
-      toast.error("Failed to load enrolled students");
+      toast.error("Failed to load students");
     }
   };
+
+  useEffect(() => {
+    AuthClient.create().then(async (client) => {
+      setAuthClient(client);
+      if (await client.isAuthenticated()) {
+        await refreshSession();
+      }
+    });
+  }, []);
 
   return (
     <div className="app">
       <Toaster position="top-right" />
       <h1>EduChain – Decentralized University</h1>
 
-      <div className="roles">
-        <button onClick={() => setRole("Student")}>Student</button>
-        <button onClick={() => setRole("Instructor")}>Instructor</button>
-        <button onClick={() => setRole("Admin")}>Admin</button>
+      <div className="auth-section">
+       {!identity ? (
+  <div className="roles">
+    <button onClick={() => handleLoginAs("Student")}>Login as Student</button>
+    <button onClick={() => handleLoginAs("Professor")}>Login as Instructor</button>
+    <button onClick={() => handleLoginAs("Admin")}>Login as Admin</button>
+  </div>
+) : (
+  <>
+    <p>Logged in as {principalText} ({role})</p>
+    <button onClick={logout}>Logout</button>
+  </>
+)}
       </div>
 
       {/* Student Panel */}
@@ -117,7 +293,7 @@ export default function App() {
       )}
 
       {/* Instructor Panel */}
-      {role === "Instructor" && (
+      {role === "Professor" && (
         <div className="panel">
           <h2>Request New Course</h2>
           <input placeholder="Instructor Name" value={newCourse.instructor_name}
@@ -171,10 +347,23 @@ export default function App() {
 
           <h3>Platform Stats</h3>
           <p>Students: {stats.total_students}, Courses: {stats.total_courses}, Certificates: {stats.certificates_issued}</p>
+        <section>
+  <h2>All Users & Roles</h2>
+  {users.length > 0 ? (
+    <ul>
+      {users.map(u => (
+        <li key={u.principal}>
+          <strong>{u.principal}</strong> — {u.role}
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p>No users found.</p>
+  )}
+</section>
         </div>
       )}
 
-      {/* Enrolled Students Modal */}
       {enrolledPopup.show && (
         <div className="modal">
           <div className="modal-content">
@@ -183,9 +372,9 @@ export default function App() {
               {enrolledPopup.list.map((s, i) => (
                 <li key={i}>{s.name} ({s.roll_no}) – Status: {s.status}
                   <button disabled={loading}
-                    onClick={() => call("mark_pass", [BigInt(enrolledPopup.courseId), s.student])}>Pass</button>
+                    onClick={() => call("mark_pass", [BigInt(enrolledPopup.courseId), Principal.fromText(s.student)])}>Pass</button>
                   <button disabled={loading}
-                    onClick={() => call("mark_fail", [BigInt(enrolledPopup.courseId), s.student])}>Fail</button>
+                    onClick={() => call("mark_fail", [BigInt(enrolledPopup.courseId), Principal.fromText(s.student)])}>Fail</button>
                 </li>
               ))}
             </ul>
@@ -196,3 +385,4 @@ export default function App() {
     </div>
   );
 }
+
